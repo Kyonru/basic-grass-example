@@ -1,4 +1,4 @@
-// MIT License. 
+// MIT License.
 // Made by Dylearn
 
 global uniform sampler2D cloud_noise; // Noise for cloud simulation
@@ -23,7 +23,7 @@ float get_cloud_noise(vec3 world_pos) {
 	float t = (cloud_world_y - world_pos.y) / light_direction.y;
 	vec3 hit_pos = world_pos + t * light_direction;
 	float inv_scale = 1.0 / cloud_scale;
-	
+
 	//// Non-repeating clouds
 	// Rotate wind noise direction left and right
 	vec2 cloud_direction1 = rotate_vec2(cloud_direction, cloud_diverge_angle);
@@ -37,12 +37,12 @@ float get_cloud_noise(vec3 world_pos) {
 	// Combine noise samples
 	float cloud_sample = (cloud_sample1 * cloud_sample2);
 	float light_value = clamp(cloud_sample + cloud_threshold, 0.0, 1.0);
-	
+
 	//// Simple clouds
 	//vec2 cloud_offset = cloud_direction * cloud_speed * TIME;
 	//vec2 light_uv = (hit_pos.xz * inv_scale) + cloud_offset;
 	//float light_value = texture(cloud_noise, light_uv).r;
-	
+
 	light_value = (light_value - 0.5) * cloud_contrast + 0.5;
 	light_value = clamp(light_value + cloud_threshold, cloud_shadow_min, 1.0);
 	return light_value;

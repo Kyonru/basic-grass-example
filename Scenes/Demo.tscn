@@ -90,7 +90,7 @@ shader_parameter/debug_displacement = false
 shader_parameter/player_displacement_angle_z = 60.0
 shader_parameter/player_displacement_angle_x = 62.7
 shader_parameter/radius_exponent = 0.9
-shader_parameter/character_positions = [Vector4(-6.05754, 0, -1.80883, 0.86), Vector4(-6.63916, 0, 0.462336, 0.53), Vector4(-6.70486, 0, 2.44893, 0.38), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0)]
+shader_parameter/character_positions = [Vector4(-8.57511, 0, 3.85661, 0.86), Vector4(-5.12625, 0, 5.26712, 0.53), Vector4(-10.0571, 0, 1.60275, 0.38), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0), Vector4(0, 0, 0, 0)]
 shader_parameter/cuts = 3
 shader_parameter/wrap = 0.0
 shader_parameter/steepness = 1.0
@@ -478,8 +478,8 @@ grass = NodePath("../Floor/Grass")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.56686, 0, 0.295852)
 
 [node name="Large" type="CharacterBody3D" parent="SubViewport/Characters" node_paths=PackedStringArray("camera") groups=["characters"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.48678, 0, -2.11632)
-velocity = Vector3(0.0765982, 0, -0.228911)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6.04694, 0, 3.58347)
+velocity = Vector3(-0.76066, 0, 0.446653)
 script = ExtResource("15_y7u4v")
 camera = NodePath("../../Camera3D")
 speed = 2.0
@@ -494,7 +494,8 @@ mesh = SubResource("CapsuleMesh_xcudr")
 skeleton = NodePath("../../..")
 
 [node name="Medium" type="CharacterBody3D" parent="SubViewport/Characters" node_paths=PackedStringArray("camera") groups=["characters"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.0723, 0, 0.166484)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.56, 0, 5.04009)
+velocity = Vector3(-0.0119346, 0, 1.34755)
 script = ExtResource("15_y7u4v")
 camera = NodePath("../../Camera3D")
 speed = 2.5
@@ -509,8 +510,8 @@ mesh = SubResource("CapsuleMesh_xcudr")
 skeleton = NodePath("../../..")
 
 [node name="Small" type="CharacterBody3D" parent="SubViewport/Characters" node_paths=PackedStringArray("camera") groups=["characters"]]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.18786, 0, 2.07604)
-velocity = Vector3(-0.97205, 0, -1.50191)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7.51801, 0, 1.30396)
+velocity = Vector3(-0.540743, 0, -0.0573764)
 script = ExtResource("15_y7u4v")
 camera = NodePath("../../Camera3D")
 speed = 3.0

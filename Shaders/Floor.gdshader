@@ -1,4 +1,4 @@
-// MIT License. 
+// MIT License.
 // Made by Dylearn
 // Adapted from atzuk4451 https://godotshaders.com/shader/flexible-toon-shader-godot-4/
 
