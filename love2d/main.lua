@@ -40,11 +40,11 @@ local CHARACTER_SEND_FRAMERATE = 10.0 -- CharacterManager.gd grass_framerate
 local CLOUD_PARAMS = {
 	cloud_scale = 40.0,
 	cloud_world_y = 50.0,
-	cloud_speed = -0.01,
-	cloud_contrast = 3.845,
-	cloud_threshold = 0.27,
+	cloud_speed = -0.04,
+	cloud_contrast = 1.845,
+	cloud_threshold = 0.3,
 	cloud_direction = { 0.0, -1.0 },
-	cloud_shadow_min = 0.2,
+	cloud_shadow_min = 0.61,
 	cloud_diverge_angle = 20.0,
 }
 
