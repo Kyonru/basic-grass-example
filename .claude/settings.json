@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(love --version)",
+      "Read(//Applications/**)",
+      "Bash(sips -g pixelWidth -g pixelHeight \"/Users/kyonru/Documents/projects/games/Dylearn-3D-Pixel-Art-Grass-Demo/love2d/assets/grassleaf.png\")",
+      "Bash(rm -f '/Users/kyonru/Library/Application Support/LOVE/dylearn-grass-love/shot.png')",
+      "Bash(love love2d *)",
+      "Read(//Users/kyonru/Library/Application Support/LOVE/**)",
+      "Bash(awk '{print $2}')",
+      "Bash(screencapture -x /tmp/screen.png)",
+      "Bash(sips -Z 1200 /tmp/screen.png -o /tmp/screen_small.png)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Bash(pkill -f \"MacOS/love\")"
+    ]
+  }
+}
