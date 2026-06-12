@@ -96,12 +96,14 @@ mat3 view_space_rotate(float angle) {
 }
 
 vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    float instance_id = float(love_InstanceID);
-    // Generate random numbers for accent leaves based on instance ID
-    v_seed1 = random(instance_id);
-    v_seed2 = random(instance_id + PI);
-
     vec3 VERTEX = vertex_position.xyz;
+    vec3 object_origin = InstanceOffset;
+    v_object_origin = object_origin;
+    // Generate random numbers for accent leaves based on instance position.
+    float instance_seed = location_seed(object_origin.xz);
+    v_seed1 = random(instance_seed);
+    v_seed2 = random(instance_seed + PI);
+
     // Accent 1
     if (v_seed1 < accent_frequency1) {
         VERTEX.y += accent_height1;
@@ -112,9 +114,6 @@ vec4 position(mat4 transform_projection, vec4 vertex_position) {
         VERTEX.y += accent_height2;
         VERTEX *= accent_scale2;
     }
-
-    vec3 object_origin = InstanceOffset;
-    v_object_origin = object_origin;
 
     // Random per-blade phase so quantised blades don't all step on the same frame
     float seed = 10.0 * location_seed(object_origin.xy);

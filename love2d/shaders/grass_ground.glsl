@@ -1,54 +1,38 @@
-// MIT License.
-// LÖVE port of Shaders/Floor.gdshader + Shaders/clouds.gdshaderinc (by Dylearn).
-// Flat toon-lit ground with noise colour patches and cloud shadows.
+// Ground tint pass for matching each grass blade's base colour on the floor.
 
 #pragma language glsl3
 
 #define PI 3.14159265358979
 
+varying vec3 v_object_origin;
 varying vec3 v_world_pos;
-
-uniform float u_time;
-
-vec2 rotate_vec2(vec2 vector, float angle) {
-    float angle_deg = angle * (PI / 180.0);
-    float rotated_x = (vector.x * cos(angle_deg)) - (vector.y * sin(angle_deg));
-    float rotated_y = (vector.x * sin(angle_deg)) + (vector.y * cos(angle_deg));
-    return vec2(rotated_x, rotated_y);
-}
-
-#ifdef VERTEX
 
 uniform mat4 u_view;
 uniform mat4 u_proj;
+uniform float u_time;
 
-vec4 position(mat4 transform_projection, vec4 vertex_position) {
-    v_world_pos = vertex_position.xyz; // floor mesh is authored in world space
-    return u_proj * (u_view * vec4(vertex_position.xyz, 1.0));
-}
-
-#endif
-
-#ifdef PIXEL
+uniform Image albedo2_noise;
+uniform Image albedo3_noise;
 
 uniform vec4 albedo1;
 uniform vec4 albedo2;
-uniform Image albedo2_noise;
 uniform float albedo2_scale;
 uniform float albedo2_threshold;
 uniform vec4 albedo3;
-uniform Image albedo3_noise;
 uniform float albedo3_scale;
 uniform float albedo3_threshold;
+uniform float accent_frequency1;
+uniform vec4 accent_albedo1;
+uniform float accent_probability2;
+uniform vec4 accent_albedo2;
 
 uniform int cuts;
 uniform float wrap;
 uniform float steepness;
 uniform float threshold_gradient_size;
 uniform vec3 u_light_color;
-uniform float u_ndotl; // dot(up, light direction)
+uniform float u_ndotl;
 
-// Cloud shadow globals (clouds.gdshaderinc)
 uniform Image cloud_noise;
 uniform float cloud_scale;
 uniform float cloud_world_y;
@@ -59,6 +43,35 @@ uniform vec2 cloud_direction;
 uniform vec3 light_direction;
 uniform float cloud_shadow_min;
 uniform float cloud_diverge_angle;
+
+#ifdef VERTEX
+
+attribute vec3 InstanceOffset;
+
+vec4 position(mat4 transform_projection, vec4 vertex_position) {
+    v_object_origin = InstanceOffset;
+    v_world_pos = InstanceOffset + vec3(vertex_position.x, 0.012, vertex_position.z);
+    return u_proj * (u_view * vec4(v_world_pos, 1.0));
+}
+
+#endif
+
+#ifdef PIXEL
+
+vec2 rotate_vec2(vec2 vector, float angle) {
+    float angle_deg = angle * (PI / 180.0);
+    float rotated_x = (vector.x * cos(angle_deg)) - (vector.y * sin(angle_deg));
+    float rotated_y = (vector.x * sin(angle_deg)) + (vector.y * cos(angle_deg));
+    return vec2(rotated_x, rotated_y);
+}
+
+float location_seed(vec2 location) {
+    return fract(sin(dot(location, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float random(float n) {
+    return fract(sin(n * 12.9898) * 43758.5453);
+}
 
 float get_cloud_noise(vec3 world_pos) {
     float t = (cloud_world_y - world_pos.y) / light_direction.y;
@@ -112,10 +125,11 @@ float toon_stepped(float diffuse_amount) {
     return diffuse_stepped;
 }
 
-vec4 effect(vec4 vertex_color, Image tex, vec2 texture_coords, vec2 screen_coords) {
-    float albedo2_noise_tex = Texel(albedo2_noise, v_world_pos.xz * albedo2_scale).r;
-    float albedo3_noise_tex = Texel(albedo3_noise, v_world_pos.xz * albedo3_scale).r;
+vec3 grass_colour_for_origin(vec3 object_origin) {
+    float albedo2_noise_tex = Texel(albedo2_noise, object_origin.xz * albedo2_scale).r;
+    float albedo3_noise_tex = Texel(albedo3_noise, object_origin.xz * albedo3_scale).r;
     vec3 ALBEDO = albedo1.rgb;
+
     if (albedo2_noise_tex > albedo2_threshold) {
         ALBEDO = albedo2.rgb;
     }
@@ -123,13 +137,27 @@ vec4 effect(vec4 vertex_color, Image tex, vec2 texture_coords, vec2 screen_coord
         ALBEDO = albedo3.rgb;
     }
 
+    float instance_seed = location_seed(object_origin.xz);
+    float seed1 = random(instance_seed);
+    float seed2 = random(instance_seed + PI);
+    if (seed1 < accent_frequency1) {
+        ALBEDO = accent_albedo1.rgb;
+    } else if (seed2 < accent_probability2) {
+        ALBEDO = accent_albedo2.rgb;
+    }
+
     float diffuse_amount = (u_ndotl + wrap) * steepness;
-    diffuse_amount = min(diffuse_amount, get_cloud_noise(v_world_pos));
+    diffuse_amount = min(diffuse_amount, get_cloud_noise(object_origin));
+    return ALBEDO * u_light_color * toon_stepped(diffuse_amount);
+}
 
-    // Toon shading with same hybrid stepping as grass.
-    float diffuse_stepped = toon_stepped(diffuse_amount);
+vec4 effect(vec4 vertex_color, Image tex, vec2 texture_coords, vec2 screen_coords) {
+    vec2 centered_uv = texture_coords - vec2(0.5);
+    float dist = length(centered_uv) * 2.0;
+    if (dist > 1.0) discard;
 
-    return vec4(ALBEDO * u_light_color * diffuse_stepped, 1.0);
+    float alpha = 1.0 - smoothstep(0.65, 1.0, dist);
+    return vec4(grass_colour_for_origin(v_object_origin), alpha);
 }
 
 #endif
