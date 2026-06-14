@@ -1,6 +1,6 @@
 {
   "lockfileVersion": 1,
-  "generatedAt": "2026-06-14T19:56:50.770Z",
+  "generatedAt": "2026-06-14T22:38:10.331Z",
   "packages": {
     "lua-state-machine": {
       "version": "master",
@@ -333,6 +333,24 @@
         }
       ],
       "installedAt": "2026-06-14T19:56:50.768Z"
+    },
+    "baton": {
+      "version": "v1.0.2",
+      "trust": "verified",
+      "source": {
+        "repo": "tesselode/baton",
+        "tag": "v1.0.2",
+        "resolvedRef": "3defe19f8f0da1a457ba86095e6f6a3c7ee6a8e9",
+        "commitSha": "3defe19f8f0da1a457ba86095e6f6a3c7ee6a8e9"
+      },
+      "files": [
+        {
+          "name": "baton.lua",
+          "target": "lib/baton.lua",
+          "sha256": "5dee8e0984badef516d1a42f5996b8fae332363399940241fb82abeb5ae648f7"
+        }
+      ],
+      "installedAt": "2026-06-14T22:38:10.329Z"
     }
   }
 }
