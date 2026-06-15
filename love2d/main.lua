@@ -9,6 +9,8 @@
 local lg = love.graphics
 local lm = love.math
 
+local Player = require("player")
+
 -- Viewport ------------------------------------------------------------------
 
 local VIEW_W, VIEW_H = 640, 360 -- SubViewport size
@@ -40,7 +42,7 @@ local CHARACTER_SEND_FRAMERATE = 10.0 -- CharacterManager.gd grass_framerate
 local CLOUD_PARAMS = {
 	cloud_scale = 40.0,
 	cloud_world_y = 50.0,
-	cloud_speed = -0.04,
+	cloud_speed = -0.02,
 	cloud_contrast = 1.845,
 	cloud_threshold = 0.3,
 	cloud_direction = { 0.0, -1.0 },
@@ -75,8 +77,10 @@ local GRASS_PARAMS = {
 	noise_diverge_angle = 10.0,
 	view_sway_speed = 0.1,
 	view_sway_angle = 10.0,
-	player_displacement_angle_z = 60.0,
-	player_displacement_angle_x = 62.7,
+	-- player_displacement_angle_z = 60.0,
+	-- player_displacement_angle_x = 62.7,
+	player_displacement_angle_z = 160.0,
+	player_displacement_angle_x = 162.7,
 	radius_exponent = 0.9,
 	cuts = 3,
 	wrap = 0.0,
@@ -114,6 +118,7 @@ local quantised = true
 local debug_noise = false
 local displacement_enabled = true
 local screenshot_timer = nil
+local player
 
 -- Helpers -------------------------------------------------------------------
 
@@ -328,6 +333,27 @@ local function ortho_ray_origin(u, v)
 	}
 end
 
+-- Window pixel -> world ground point (inverse of the canvas blit + ortho
+-- camera). Used to plant the 2D player sprite's feet into the 3D grass.
+local function ground_under_screen(px, py)
+	local w, h = lg.getDimensions()
+	local scale = math.max(1, math.floor(math.min(w / VIEW_W, h / VIEW_H)))
+	local sx = math.floor((w - VIEW_W * scale) * 0.5)
+	local sy = math.floor((h - VIEW_H * scale) * 0.5)
+	local u = (px - sx) / (VIEW_W * scale)
+	local v = (py - sy) / (VIEW_H * scale)
+	local origin = ortho_ray_origin(u, v)
+	local dir = CAM_FORWARD
+	if math.abs(dir[2]) < 1e-6 then
+		return nil
+	end
+	local t = -origin[2] / dir[2]
+	if t <= 0.0 then
+		return nil
+	end
+	return { origin[1] + dir[1] * t, 0.0, origin[3] + dir[3] * t }
+end
+
 -- Random point on the ground in the bottom half of the camera's view
 local function random_visible_ground_point(ch)
 	for _ = 1, 10 do
@@ -435,6 +461,16 @@ local function send_character_positions()
 			packed[i] = { 0.0, 0.0, 0.0, 0.0 }
 		end
 	end
+
+	-- Plant the player's feet into the grass: slot its ground point after the
+	-- NPCs (3 used, 16 available) so blades bend under the sprite's base.
+	if player and displacement_enabled then
+		local gp = ground_under_screen(player:footPosition())
+		if gp then
+			packed[#characters + 1] = { gp[1], gp[2], gp[3], player.grassRadius }
+		end
+	end
+
 	grassShader:send("character_positions", unpack(packed))
 end
 
@@ -544,10 +580,14 @@ function love.load(args)
 	spawn_characters()
 	send_static_uniforms()
 	send_character_positions()
+
+	player = Player.new({ x = 320, y = 200 })
 end
 
 function love.update(dt)
 	time_elapsed = time_elapsed + dt
+
+	player:update(dt)
 
 	for _, ch in ipairs(characters) do
 		update_character(ch, dt)
@@ -636,6 +676,8 @@ function love.draw()
 	local oy = math.floor((h - VIEW_H * scale) * 0.5)
 	lg.setColor(1, 1, 1, 1)
 	lg.draw(canvas, ox, oy + VIEW_H * scale, 0, scale, -scale)
+
+	player:draw()
 
 	lg.setColor(1, 1, 1, 0.85)
 	lg.print(
