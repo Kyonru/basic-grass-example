@@ -15,14 +15,29 @@ fi
 TARGET="${TARGET:-${RASPBERRY_PI_USER:?set RASPBERRY_PI_USER in .env}@${RASPBERRY_PI_HOST:?set RASPBERRY_PI_HOST in .env}}"
 REMOTE_FILE="${REMOTE_FILE:-${RASPBERRY_PI_DIR:?set RASPBERRY_PI_DIR in .env}/${LOVE_FILE:?set LOVE_FILE in .env}}"
 
-# --detach: start it and walk away (old behaviour, with a startup check).
-# default: stream the log live so a crash/traceback is visible immediately.
+# --detach:     start it and walk away (old behaviour, with a startup check).
+# --no-upload:  skip the build/upload and just (re)start what's already on the Pi.
+# default:      build + upload the current code, then stream the log live.
 DETACH=false
+UPLOAD=true
 for arg in "$@"; do
-  [[ "$arg" == "--detach" ]] && DETACH=true
+  case "$arg" in
+    --detach) DETACH=true ;;
+    --no-upload) UPLOAD=false ;;
+  esac
 done
 
 echo "Running on Raspberry Pi..."
+
+# Build the .love from source and push it, so the Pi never runs stale code.
+# Skipping this is the #1 way to "fix" a bug locally yet keep seeing it on the Pi.
+if [[ "$UPLOAD" == true ]]; then
+  echo "Building ${LOVE_FILE} from ${LOVE_SOURCE_DIR}/ ..."
+  ( cd "$SCRIPT_DIR" && bash zip.bash )
+  echo "Uploading to ${TARGET}:${REMOTE_FILE} ..."
+  ssh "$TARGET" "mkdir -p '${RASPBERRY_PI_DIR}'"
+  scp "$SCRIPT_DIR/$LOVE_FILE" "$TARGET:$REMOTE_FILE"
+fi
 
 if [[ "$DETACH" == true ]]; then
   ssh "$TARGET" "bash -s" <<EOF

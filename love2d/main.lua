@@ -31,7 +31,17 @@ local LIGHT_COLOR = { 1.0, 1.0, 1.0 }
 -- World ---------------------------------------------------------------------
 
 local FLOOR_SIZE = 25.0
-local GRASS_COUNT = 30000 -- MultiMesh visible_instance_count
+
+-- Grass density presets. GRASS_COUNT is the live (mutable) value; love.load picks
+-- a tier from the device and apply_quality() swaps it at runtime. 30000 is the
+-- original MultiMesh visible_instance_count.
+local GRASS_QUALITY = {
+	low = 500,
+	medium = 15000,
+	high = 30000,
+}
+local GRASS_QUALITY_ORDER = { "low", "medium", "high" }
+local GRASS_COUNT = GRASS_QUALITY.high
 local GRASS_FIELD = 12.2 -- grass scatter half-extent
 local GRASS_GROUND_PATCH = 0.26
 
@@ -110,6 +120,8 @@ local canvas
 local grassShader, grassGroundShader, floorShader, capsuleShader
 local grassMesh, grassGroundMesh, floorMesh, capsuleMesh
 local grassInstances
+local instancing -- vertex attribute instancing supported? (false on the Pi)
+local quality = "high" -- current grass density preset
 local textures = {}
 local characters = {}
 local time_elapsed = 0.0
@@ -205,36 +217,50 @@ end
 
 -- Meshes --------------------------------------------------------------------
 
+local GRASS_VERTEX_FORMAT = {
+	{ "VertexPosition", "float", 3 },
+	{ "VertexTexCoord", "float", 2 },
+}
+
+-- Baked format: the per-blade origin travels per-vertex for the non-instanced
+-- fallback (see rebuild_grass), so the shader's InstanceOffset attribute is fed
+-- identically whether it arrives per-instance or per-vertex.
+local GRASS_VERTEX_FORMAT_BAKED = {
+	{ "VertexPosition", "float", 3 },
+	{ "VertexTexCoord", "float", 2 },
+	{ "InstanceOffset", "float", 3 },
+}
+
 -- One grass blade: QuadMesh 0.2 x 0.3 centred on its origin, uv.y = 0 at the tip
-local function make_grass_mesh()
-	local format = {
-		{ "VertexPosition", "float", 3 },
-		{ "VertexTexCoord", "float", 2 },
+local GRASS_BLADE_VERTS = {
+	{ -0.1, 0.15, 0.0, 0.0, 0.0 },
+	{ 0.1, 0.15, 0.0, 1.0, 0.0 },
+	{ 0.1, -0.15, 0.0, 1.0, 1.0 },
+	{ -0.1, -0.15, 0.0, 0.0, 1.0 },
+}
+
+local function grass_ground_verts()
+	local h = GRASS_GROUND_PATCH * 0.5
+	return {
+		{ -h, 0.0, -h, 0.0, 0.0 },
+		{ h, 0.0, -h, 1.0, 0.0 },
+		{ h, 0.0, h, 1.0, 1.0 },
+		{ -h, 0.0, h, 0.0, 1.0 },
 	}
-	local mesh = lg.newMesh(format, {
-		{ -0.1, 0.15, 0.0, 0.0, 0.0 },
-		{ 0.1, 0.15, 0.0, 1.0, 0.0 },
-		{ 0.1, -0.15, 0.0, 1.0, 1.0 },
-		{ -0.1, -0.15, 0.0, 0.0, 1.0 },
-	}, "fan", "static")
+end
+
+local function make_grass_mesh()
+	local mesh = lg.newMesh(GRASS_VERTEX_FORMAT, GRASS_BLADE_VERTS, "fan", "static")
 	mesh:setTexture(textures.grass)
 	return mesh
 end
 
 local function make_grass_ground_mesh()
-	local h = GRASS_GROUND_PATCH * 0.5
-	return lg.newMesh({
-		{ "VertexPosition", "float", 3 },
-		{ "VertexTexCoord", "float", 2 },
-	}, {
-		{ -h, 0.0, -h, 0.0, 0.0 },
-		{ h, 0.0, -h, 1.0, 0.0 },
-		{ h, 0.0, h, 1.0, 1.0 },
-		{ -h, 0.0, h, 0.0, 1.0 },
-	}, "fan", "static")
+	return lg.newMesh(GRASS_VERTEX_FORMAT, grass_ground_verts(), "fan", "static")
 end
 
-local function make_grass_instances()
+-- Scatter the blades over the field; shared by both render paths.
+local function make_grass_offsets()
 	local offsets = {}
 	for i = 1, GRASS_COUNT do
 		offsets[i] = {
@@ -243,19 +269,92 @@ local function make_grass_instances()
 			(lm.random() * 2.0 - 1.0) * GRASS_FIELD,
 		}
 	end
-	return lg.newMesh({ { "InstanceOffset", "float", 3 } }, offsets, nil, "static")
+	return offsets
 end
 
 local function attach_grass_instances(mesh, instances)
 	mesh:attachAttribute("InstanceOffset", instances, "perinstance")
 end
 
+-- Fallback for GPUs without vertex instancing (the Pi's GL ES driver): bake
+-- every blade into one big mesh, replicating its origin into a per-vertex
+-- InstanceOffset attribute. One lg.draw replaces drawInstanced; shaders unchanged.
+local function make_baked_grass_mesh(baseVerts, offsets, texture)
+	local n = #baseVerts
+	local verts = {}
+	local indices = {}
+	local base = 0
+	for i = 1, #offsets do
+		local off = offsets[i]
+		for j = 1, n do
+			local bv = baseVerts[j]
+			verts[#verts + 1] = { bv[1], bv[2], bv[3], bv[4], bv[5], off[1], off[2], off[3] }
+		end
+		-- triangle-fan over the quad: (1,2,3), (1,3,4), ...
+		for k = 2, n - 1 do
+			indices[#indices + 1] = base + 1
+			indices[#indices + 1] = base + k
+			indices[#indices + 1] = base + k + 1
+		end
+		base = base + n
+	end
+	local mesh = lg.newMesh(GRASS_VERTEX_FORMAT_BAKED, verts, "triangles", "static")
+	mesh:setVertexMap(indices)
+	if texture then
+		mesh:setTexture(texture)
+	end
+	return mesh
+end
+
 local function rebuild_grass()
-	grassMesh = make_grass_mesh()
-	grassGroundMesh = make_grass_ground_mesh()
-	grassInstances = make_grass_instances()
-	attach_grass_instances(grassMesh, grassInstances)
-	attach_grass_instances(grassGroundMesh, grassInstances)
+	if instancing then
+		grassMesh = make_grass_mesh()
+		grassGroundMesh = make_grass_ground_mesh()
+		grassInstances = lg.newMesh({ { "InstanceOffset", "float", 3 } }, make_grass_offsets(), nil, "static")
+		attach_grass_instances(grassMesh, grassInstances)
+		attach_grass_instances(grassGroundMesh, grassInstances)
+	else
+		local offsets = make_grass_offsets()
+		grassMesh = make_baked_grass_mesh(GRASS_BLADE_VERTS, offsets, textures.grass)
+		grassGroundMesh = make_baked_grass_mesh(grass_ground_verts(), offsets, nil)
+	end
+end
+
+local function draw_grass(mesh)
+	if instancing then
+		lg.drawInstanced(mesh, GRASS_COUNT)
+	else
+		lg.draw(mesh)
+	end
+end
+
+-- Pick a starting quality from what we can learn about the device. The clearest
+-- signal we have is instancing support: its absence means an embedded/old GPU
+-- (e.g. the Raspberry Pi), which also runs the heavier non-instanced path, so we
+-- drop to low. Otherwise grade by CPU core count as a rough capability proxy.
+-- (LÖVE 11.5 exposes no direct GPU tier/VRAM, so this is intentionally coarse.)
+local function detect_quality()
+	if not instancing then
+		return "low"
+	end
+	local cores = love.system.getProcessorCount() or 4
+	if cores >= 8 then
+		return "high"
+	elseif cores >= 4 then
+		return "medium"
+	end
+	return "low"
+end
+
+-- Switch density and rebuild the grass meshes. Cheap on the instanced path; on
+-- the baked (Pi) path this re-bakes the mesh, so expect a brief hitch.
+local function apply_quality(name)
+	if not GRASS_QUALITY[name] then
+		name = "high"
+	end
+	quality = name
+	GRASS_COUNT = GRASS_QUALITY[name]
+	rebuild_grass()
 end
 
 local function make_floor_mesh()
@@ -555,9 +654,15 @@ function love.errorhandler(msg)
 end
 
 function love.load(args)
+	local force_no_instancing = false
+	local quality_arg
 	for _, a in ipairs(args or {}) do
 		if a == "--shot" then
 			screenshot_timer = 2.5
+		elseif a == "--no-instancing" then
+			force_no_instancing = true -- exercise the Pi fallback on a capable GPU
+		elseif a:match("^%-%-quality=") then
+			quality_arg = a:match("^%-%-quality=(%a+)") -- low | medium | high | auto
 		end
 	end
 
@@ -579,7 +684,16 @@ function love.load(args)
 	canvas = lg.newCanvas(VIEW_W, VIEW_H)
 	canvas:setFilter("nearest", "nearest")
 
-	rebuild_grass()
+	instancing = lg.getSupported().instancing and not force_no_instancing
+
+	-- Explicit --quality wins; otherwise (or with "auto") detect from the device.
+	local chosen = quality_arg
+	if not chosen or chosen == "auto" then
+		chosen = detect_quality()
+	end
+	apply_quality(chosen) -- sets GRASS_COUNT and builds the grass meshes
+
+	print(string.format("[grass] quality=%s, %d blades, instancing=%s", quality, GRASS_COUNT, tostring(instancing)))
 	floorMesh = make_floor_mesh()
 	capsuleMesh = make_capsule_mesh(0.3, 1.5, 16, 6)
 
@@ -632,6 +746,14 @@ function love.keypressed(key)
 		send_character_positions()
 	elseif key == "r" then
 		rebuild_grass()
+	elseif key == "g" then
+		local i = 1
+		for idx, name in ipairs(GRASS_QUALITY_ORDER) do
+			if name == quality then
+				i = idx
+			end
+		end
+		apply_quality(GRASS_QUALITY_ORDER[(i % #GRASS_QUALITY_ORDER) + 1])
 	end
 end
 
@@ -657,12 +779,12 @@ function love.draw()
 	grassGroundShader:send("u_time", time_elapsed)
 	lg.setDepthMode("lequal", false)
 	lg.setShader(grassGroundShader)
-	lg.drawInstanced(grassGroundMesh, GRASS_COUNT)
+	draw_grass(grassGroundMesh)
 
 	grassShader:send("u_time", time_elapsed)
 	lg.setDepthMode("lequal", true)
 	lg.setShader(grassShader)
-	lg.drawInstanced(grassMesh, GRASS_COUNT)
+	draw_grass(grassMesh)
 
 	-- Translucent capsules + the 2D player sprite, depth-tested but not written,
 	-- drawn back to front so they y/z-order against each other. The player is a
@@ -714,10 +836,9 @@ function love.draw()
 			.. tostring(quantised)
 			.. ")  |  C: displacement ("
 			.. tostring(displacement_enabled)
-			.. ")  |  N: wind debug  |  R: rescatter  |  Esc: quit  |  FPS: "
-			.. love.timer.getFPS(),
+			.. ")  |  N: wind debug  |  R: rescatter  |  G: quality  |  Esc: quit",
 		12,
 		12
 	)
-	lg.print(love.timer.getFPS() .. " fps, " .. GRASS_COUNT .. " blades", 12, 30)
+	lg.print(string.format("%d fps, %d blades (%s)", love.timer.getFPS(), GRASS_COUNT, quality), 12, 30)
 end
