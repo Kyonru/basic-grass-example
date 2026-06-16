@@ -13,9 +13,13 @@ local Player = require("player")
 
 -- Viewport ------------------------------------------------------------------
 
-local VIEW_W, VIEW_H = 640, 360 -- SubViewport size
+-- Internal render resolution (mutable): the 3D scene renders into a canvas this
+-- size, then gets upscaled to the window on blit. apply_quality() lowers it for
+-- cheaper tiers; it stays 16:9 so the orthographic projection is unaffected.
+local VIEW_W, VIEW_H = 640, 360
+local ASPECT = 16 / 9
 local ORTHO_H = 6.085 -- Camera3D size (keep_height)
-local ORTHO_W = ORTHO_H * VIEW_W / VIEW_H
+local ORTHO_W = ORTHO_H * ASPECT
 
 -- Camera transform (basis columns + origin from the .tscn)
 local CAM_POS = { -14.02, 5.975, 9.92 }
@@ -36,12 +40,16 @@ local FLOOR_SIZE = 25.0
 -- a tier from the device and apply_quality() swaps it at runtime. 30000 is the
 -- original MultiMesh visible_instance_count.
 local GRASS_QUALITY = {
-	low = 500,
-	medium = 15000,
-	high = 30000,
+	-- blades   = scatter density
+	-- render_h = internal render height (16:9, upscaled to the window). Lower is
+	--            cheaper: the grass shader is fragment-heavy, so fewer pixels helps
+	--            far more than fewer blades on a weak GPU.
+	low = { blades = 1000, render_h = 72 },
+	medium = { blades = 5000, render_h = 144 },
+	high = { blades = 15000, render_h = 216 },
 }
 local GRASS_QUALITY_ORDER = { "low", "medium", "high" }
-local GRASS_COUNT = GRASS_QUALITY.high
+local GRASS_COUNT = GRASS_QUALITY.high.blades
 local GRASS_FIELD = 12.2 -- grass scatter half-extent
 local GRASS_GROUND_PATCH = 0.26
 
@@ -353,7 +361,17 @@ local function apply_quality(name)
 		name = "high"
 	end
 	quality = name
-	GRASS_COUNT = GRASS_QUALITY[name]
+	local q = GRASS_QUALITY[name]
+	GRASS_COUNT = q.blades
+
+	-- Resize the internal render target. Rendering the 3D scene at a low
+	-- resolution and upscaling with nearest filtering keeps the pixel-art look
+	-- while cutting fragment-shader cost (the real bottleneck on the Pi).
+	VIEW_H = q.render_h
+	VIEW_W = math.floor(VIEW_H * ASPECT + 0.5)
+	canvas = lg.newCanvas(VIEW_W, VIEW_H)
+	canvas:setFilter("nearest", "nearest")
+
 	rebuild_grass()
 end
 
@@ -681,9 +699,6 @@ function love.load(args)
 	floorShader = lg.newShader("shaders/floor.glsl")
 	capsuleShader = lg.newShader("shaders/capsule.glsl")
 
-	canvas = lg.newCanvas(VIEW_W, VIEW_H)
-	canvas:setFilter("nearest", "nearest")
-
 	instancing = lg.getSupported().instancing and not force_no_instancing
 
 	-- Explicit --quality wins; otherwise (or with "auto") detect from the device.
@@ -840,5 +855,9 @@ function love.draw()
 		12,
 		12
 	)
-	lg.print(string.format("%d fps, %d blades (%s)", love.timer.getFPS(), GRASS_COUNT, quality), 12, 30)
+	lg.print(
+		string.format("%d fps, %d blades, %dx%d (%s)", love.timer.getFPS(), GRASS_COUNT, VIEW_W, VIEW_H, quality),
+		12,
+		30
+	)
 end
