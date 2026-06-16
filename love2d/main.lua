@@ -354,6 +354,12 @@ local function ground_under_screen(px, py)
 	return { origin[1] + dir[1] * t, 0.0, origin[3] + dir[3] * t }
 end
 
+-- Signed distance along the camera forward axis (ground plane). Bigger = closer
+-- to the camera; used to depth-sort the translucent capsules and the player.
+local function camera_depth(x, z)
+	return (x - CAM_POS[1]) * CAM_FORWARD[1] + (z - CAM_POS[3]) * CAM_FORWARD[3]
+end
+
 -- Random point on the ground in the bottom half of the camera's view
 local function random_visible_ground_point(ch)
 	for _ = 1, 10 do
@@ -581,7 +587,7 @@ function love.load(args)
 	send_static_uniforms()
 	send_character_positions()
 
-	player = Player.new({ x = 320, y = 200 })
+	player = Player.new({ x = 746, y = 560 })
 end
 
 function love.update(dt)
@@ -589,9 +595,9 @@ function love.update(dt)
 
 	player:update(dt)
 
-	for _, ch in ipairs(characters) do
-		update_character(ch, dt)
-	end
+	-- for _, ch in ipairs(characters) do
+	-- 	update_character(ch, dt)
+	-- end
 
 	character_send_timer = character_send_timer + dt
 	local frametime = 1.0 / CHARACTER_SEND_FRAMERATE
@@ -630,6 +636,14 @@ function love.keypressed(key)
 end
 
 function love.draw()
+	-- Integer-scale blit params. Needed up here so the 2D player can be drawn
+	-- into the 3D canvas (window -> canvas transform) and depth-sorted with the
+	-- capsules, then reused for the final blit.
+	local w, h = lg.getDimensions()
+	local scale = math.max(1, math.floor(math.min(w / VIEW_W, h / VIEW_H)))
+	local ox = math.floor((w - VIEW_W * scale) * 0.5)
+	local oy = math.floor((h - VIEW_H * scale) * 0.5)
+
 	lg.setCanvas({ canvas, depth = true })
 	lg.clear(0.35, 0.47, 0.55, 1.0, true, true)
 	lg.setDepthMode("lequal", true)
@@ -650,19 +664,40 @@ function love.draw()
 	lg.setShader(grassShader)
 	lg.drawInstanced(grassMesh, GRASS_COUNT)
 
-	-- Translucent capsules: depth-tested but not depth-written, back to front
+	-- Translucent capsules + the 2D player sprite, depth-tested but not written,
+	-- drawn back to front so they y/z-order against each other. The player is a
+	-- screen-space sprite, so it's drawn via a window->canvas transform (which
+	-- also undoes the blit's y-flip) at its projected ground depth.
 	lg.setDepthMode("lequal", false)
 	lg.setShader(capsuleShader)
-	local order = { unpack(characters) }
+
+	local order = {}
+	for _, ch in ipairs(characters) do
+		order[#order + 1] = { depth = camera_depth(ch.pos[1], ch.pos[3]), ch = ch }
+	end
+	local pgp = ground_under_screen(player:footPosition())
+	order[#order + 1] = { depth = pgp and camera_depth(pgp[1], pgp[3]) or math.huge, player = true }
 	table.sort(order, function(a, b)
-		local da = (a.pos[1] - CAM_POS[1]) * CAM_FORWARD[1] + (a.pos[3] - CAM_POS[3]) * CAM_FORWARD[3]
-		local db = (b.pos[1] - CAM_POS[1]) * CAM_FORWARD[1] + (b.pos[3] - CAM_POS[3]) * CAM_FORWARD[3]
-		return da > db
+		return a.depth > b.depth
 	end)
-	for _, ch in ipairs(order) do
-		capsuleShader:send("u_model_scale", ch.mesh_scale)
-		capsuleShader:send("u_model_offset", { ch.pos[1], ch.pos[2] + ch.mesh_y, ch.pos[3] })
-		lg.draw(capsuleMesh)
+
+	for _, item in ipairs(order) do
+		if item.player then
+			lg.setShader()
+			lg.setDepthMode()
+			lg.push()
+			lg.translate(-ox / scale, oy / scale + VIEW_H)
+			lg.scale(1 / scale, -1 / scale)
+			player:draw()
+			lg.pop()
+			lg.setDepthMode("lequal", false)
+			lg.setShader(capsuleShader)
+		else
+			local ch = item.ch
+			capsuleShader:send("u_model_scale", ch.mesh_scale)
+			capsuleShader:send("u_model_offset", { ch.pos[1], ch.pos[2] + ch.mesh_y, ch.pos[3] })
+			lg.draw(capsuleMesh)
+		end
 	end
 
 	lg.setShader()
@@ -670,14 +705,8 @@ function love.draw()
 	lg.setCanvas()
 
 	-- Blit the 3D canvas at an integer scale; gl_Position output needs a y-flip
-	local w, h = lg.getDimensions()
-	local scale = math.max(1, math.floor(math.min(w / VIEW_W, h / VIEW_H)))
-	local ox = math.floor((w - VIEW_W * scale) * 0.5)
-	local oy = math.floor((h - VIEW_H * scale) * 0.5)
 	lg.setColor(1, 1, 1, 1)
 	lg.draw(canvas, ox, oy + VIEW_H * scale, 0, scale, -scale)
-
-	player:draw()
 
 	lg.setColor(1, 1, 1, 0.85)
 	lg.print(
