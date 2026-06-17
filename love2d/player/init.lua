@@ -8,11 +8,19 @@ local buildInput = require("player.input")
 local buildAnimations = require("player.animations")
 local Shadow = require("shadow")
 
-local FRAME_W, FRAME_H = 32, 32
-local SHEET_COLS, SHEET_ROWS = 6, 7 -- enough rows/cols for animations.lua
+local FRAME_W, FRAME_H = 64, 64
+local SHEET_COLS, SHEET_ROWS = 9, 16 -- matches the real sheet (animations.lua)
 
 local Player = {}
 Player.__index = Player
+
+-- 8-way facing from a screen-space movement vector (+x right, +y down).
+-- Octants start at E and step clockwise, so up maps to N (away from camera).
+local DIR_BY_OCTANT = { "e", "se", "s", "sw", "w", "nw", "n", "ne" }
+local function directionFromVector(mx, my)
+	local oct = math.floor((math.atan2(my, mx) + math.pi / 8) / (math.pi / 4)) % 8
+	return DIR_BY_OCTANT[oct + 1]
+end
 
 -- A generated stand-in sheet so the player is visible before real art exists.
 -- One hue per animation row, brighter toward later frames, with a 1px border.
@@ -52,9 +60,11 @@ function Player.new(opts)
 	local frameW = opts.frameWidth or FRAME_W
 	local frameH = opts.frameHeight or FRAME_H
 	local scale = opts.scale or 2
+	local facing = { dir = "s" } -- shared with every DirAnim; updated in :update
 	local animations = buildAnimations(sheet, {
 		frameWidth = frameW,
 		frameHeight = frameH,
+		facing = facing,
 	})
 	local host = PlayerActionHost:new(animations)
 	local input = buildInput()
@@ -77,6 +87,11 @@ function Player.new(opts)
 		x = opts.x or 100,
 		y = opts.y or 100,
 		scale = scale,
+		facing = facing,
+		-- Ground-anchor offset in frame pixels: the character's feet sit a few px
+		-- above the frame bottom, so a negative Y lifts the shadow/contact onto them.
+		offsetX = opts.offsetX or 0,
+		offsetY = opts.offsetY or 0,
 		frameW = frameW,
 		frameH = frameH,
 		walkSpeed = opts.walkSpeed or 120, -- pixels/sec
@@ -86,10 +101,12 @@ function Player.new(opts)
 	}, Player)
 end
 
--- Window-space position of the sprite's base (bottom-centre / "feet").
--- main.lua inverse-projects this to a world ground point for grass displacement.
+-- Window-space position of the sprite's base ("feet"): the frame's bottom-centre
+-- shifted by the offset onto the character's actual feet. main.lua inverse-
+-- projects this to a world ground point for grass displacement and the shadow.
 function Player:footPosition()
-	return self.x + (self.frameW * self.scale) * 0.5, self.y + self.frameH * self.scale
+	return self.x + (self.frameW * 0.5 + self.offsetX) * self.scale,
+		self.y + (self.frameH + self.offsetY) * self.scale
 end
 
 function Player:update(dt)
@@ -102,6 +119,11 @@ function Player:update(dt)
 	local speed = self.input:down("run") and self.runSpeed or self.walkSpeed
 	self.x = self.x + (mx or 0) * speed * dt
 	self.y = self.y + (my or 0) * speed * dt
+
+	-- Face the way we're moving; keep the last facing when standing still.
+	if (mx and mx ~= 0) or (my and my ~= 0) then
+		self.facing.dir = directionFromVector(mx or 0, my or 0)
+	end
 end
 
 function Player:draw()

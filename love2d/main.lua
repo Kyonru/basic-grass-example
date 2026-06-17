@@ -716,7 +716,17 @@ function love.load(args)
 	send_static_uniforms()
 	send_character_positions()
 
-	player = Player.new({ x = 746, y = 560 })
+	-- x/y keep the sprite's feet at the spot the scene was tuned for (the 64px
+	-- frame at scale 2 is taller than the old placeholder, so it's offset up).
+	player = Player.new({
+		x = 714,
+		y = 496,
+		sheet = "assets/spritesheet/spritesheet.png",
+		frameWidth = 64,
+		frameHeight = 64,
+		scale = 2,
+		offsetY = -3, -- lift the shadow/contact onto the feet (3px frame padding)
+	})
 end
 
 function love.update(dt)
