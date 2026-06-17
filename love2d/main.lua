@@ -126,7 +126,7 @@ local FLOOR_PARAMS = {
 -- State ---------------------------------------------------------------------
 
 local canvas
-local grassShader, grassGroundShader, floorShader, capsuleShader, playerShader
+local grassShader, grassGroundShader, floorShader, capsuleShader, playerShader, gradeShader
 local grassMesh, grassGroundMesh, floorMesh, capsuleMesh
 local grassInstances
 local instancing -- vertex attribute instancing supported? (false on the Pi)
@@ -138,6 +138,7 @@ local character_send_timer = 0.0
 local quantised = true
 local debug_noise = false
 local displacement_enabled = true
+local saturation = 1.0 -- scene colour saturation (lower = washed-out / bad weather)
 local screenshot_timer = nil
 local player
 
@@ -716,6 +717,7 @@ function love.load(args)
 	floorShader = lg.newShader("shaders/floor.glsl")
 	capsuleShader = lg.newShader("shaders/capsule.glsl")
 	playerShader = lg.newShader("shaders/player.glsl")
+	gradeShader = lg.newShader("shaders/grade.glsl")
 
 	instancing = lg.getSupported().instancing and not force_no_instancing
 
@@ -797,6 +799,10 @@ function love.keypressed(key)
 			end
 		end
 		apply_quality(GRASS_QUALITY_ORDER[(i % #GRASS_QUALITY_ORDER) + 1])
+	elseif key == "[" then
+		saturation = clamp(saturation - 0.1, 0.0, 2.0)
+	elseif key == "]" then
+		saturation = clamp(saturation + 0.1, 0.0, 2.0)
 	end
 end
 
@@ -874,9 +880,13 @@ function love.draw()
 	lg.setDepthMode()
 	lg.setCanvas()
 
-	-- Blit the 3D canvas at an integer scale; gl_Position output needs a y-flip
+	-- Blit the 3D canvas at an integer scale; gl_Position output needs a y-flip.
+	-- The grade shader post-processes the whole scene (saturation) but not the HUD.
 	lg.setColor(1, 1, 1, 1)
+	gradeShader:send("u_saturation", saturation)
+	lg.setShader(gradeShader)
 	lg.draw(canvas, ox, oy + VIEW_H * scale, 0, scale, -scale)
+	lg.setShader()
 
 	lg.setColor(1, 1, 1, 0.85)
 	lg.print(
@@ -884,12 +894,20 @@ function love.draw()
 			.. tostring(quantised)
 			.. ")  |  C: displacement ("
 			.. tostring(displacement_enabled)
-			.. ")  |  N: wind debug  |  R: rescatter  |  G: quality  |  Esc: quit",
+			.. ")  |  N: wind debug  |  R: rescatter  |  G: quality  |  [ ]: saturation  |  Esc: quit",
 		12,
 		12
 	)
 	lg.print(
-		string.format("%d fps, %d blades, %dx%d (%s)", love.timer.getFPS(), GRASS_COUNT, VIEW_W, VIEW_H, quality),
+		string.format(
+			"%d fps, %d blades, %dx%d (%s), sat %.1f",
+			love.timer.getFPS(),
+			GRASS_COUNT,
+			VIEW_W,
+			VIEW_H,
+			quality,
+			saturation
+		),
 		12,
 		30
 	)
