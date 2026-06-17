@@ -31,6 +31,7 @@ local CAM_FORWARD = { -CAM_Z[1], -CAM_Z[2], -CAM_Z[3] }
 -- DirectionalLight3D basis z (points from surfaces toward the light)
 local LIGHT_DIR = { -0.0695626, 0.725375, 0.684831 }
 local LIGHT_COLOR = { 1.0, 1.0, 1.0 }
+local LIGHT_ENERGY = 1.0 -- DirectionalLight3D.energy; scales the lit colour
 
 -- World ---------------------------------------------------------------------
 
@@ -125,7 +126,7 @@ local FLOOR_PARAMS = {
 -- State ---------------------------------------------------------------------
 
 local canvas
-local grassShader, grassGroundShader, floorShader, capsuleShader
+local grassShader, grassGroundShader, floorShader, capsuleShader, playerShader
 local grassMesh, grassGroundMesh, floorMesh, capsuleMesh
 local grassInstances
 local instancing -- vertex attribute instancing supported? (false on the Pi)
@@ -610,6 +611,7 @@ end
 local function send_static_uniforms()
 	local view = make_view_matrix()
 	local proj = make_ortho_matrix(ORTHO_W, ORTHO_H, 0.05, 200.0)
+	local light_color = { LIGHT_COLOR[1] * LIGHT_ENERGY, LIGHT_COLOR[2] * LIGHT_ENERGY, LIGHT_COLOR[3] * LIGHT_ENERGY }
 
 	grassShader:send("u_view", "column", view)
 	grassShader:send("u_proj", "column", proj)
@@ -618,7 +620,7 @@ local function send_static_uniforms()
 	grassShader:send("albedo2_noise", textures.albedo2_noise)
 	grassShader:send("albedo3_noise", textures.albedo3_noise)
 	grassShader:send("accent_texture2", textures.accent)
-	grassShader:send("u_light_color", LIGHT_COLOR)
+	grassShader:send("u_light_color", light_color)
 	-- The billboarded blade normal faces the camera, so NdotL is constant
 	grassShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	grassShader:send("quantised", quantised)
@@ -635,7 +637,7 @@ local function send_static_uniforms()
 	grassGroundShader:send("u_proj", "column", proj)
 	grassGroundShader:send("albedo2_noise", textures.albedo2_noise)
 	grassGroundShader:send("albedo3_noise", textures.albedo3_noise)
-	grassGroundShader:send("u_light_color", LIGHT_COLOR)
+	grassGroundShader:send("u_light_color", light_color)
 	grassGroundShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	for name, value in pairs(GRASS_PARAMS) do
 		send_if_present(grassGroundShader, name, value)
@@ -646,7 +648,7 @@ local function send_static_uniforms()
 	floorShader:send("u_proj", "column", proj)
 	floorShader:send("albedo2_noise", textures.albedo2_noise)
 	floorShader:send("albedo3_noise", textures.albedo3_noise)
-	floorShader:send("u_light_color", LIGHT_COLOR)
+	floorShader:send("u_light_color", light_color)
 	floorShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	for name, value in pairs(FLOOR_PARAMS) do
 		send_if_present(floorShader, name, value)
@@ -656,8 +658,20 @@ local function send_static_uniforms()
 	capsuleShader:send("u_view", "column", view)
 	capsuleShader:send("u_proj", "column", proj)
 	capsuleShader:send("light_direction", LIGHT_DIR)
-	capsuleShader:send("u_albedo", { 1.0, 1.0, 1.0 })
+	capsuleShader:send("u_albedo", light_color) -- white albedo scaled by light energy
 	capsuleShader:send("u_alpha", 0.3) -- Godot transparency = 0.7
+
+	-- Player sprite: light its normal map with the world light expressed in the
+	-- camera's view space (the space the billboard normals were captured in).
+	playerShader:send("normal_map", textures.player_normal)
+	playerShader:send("u_light_view", { dot3(LIGHT_DIR, CAM_X), dot3(LIGHT_DIR, CAM_Y), dot3(LIGHT_DIR, CAM_Z) })
+	playerShader:send("u_light_color", light_color)
+	-- cuts/wrap/steepness/threshold_gradient_size: same toon bands as the floor,
+	-- so the cloud shadow on the player matches the shadows on the ground.
+	for name, value in pairs(FLOOR_PARAMS) do
+		send_if_present(playerShader, name, value)
+	end
+	send_cloud_params(playerShader)
 end
 
 function love.errorhandler(msg)
@@ -694,10 +708,14 @@ function love.load(args)
 	textures.albedo3_noise = make_noise_texture(256, 512 * 0.0052, 31.7)
 	textures.cloud_noise = make_noise_texture(256, 512 * 0.01, 47.9)
 
+	textures.player_normal = lg.newImage("assets/spritesheet/spritesheet_normal.png")
+	textures.player_normal:setFilter("nearest", "nearest")
+
 	grassShader = lg.newShader("shaders/grass.glsl")
 	grassGroundShader = lg.newShader("shaders/grass_ground.glsl")
 	floorShader = lg.newShader("shaders/floor.glsl")
 	capsuleShader = lg.newShader("shaders/capsule.glsl")
+	playerShader = lg.newShader("shaders/player.glsl")
 
 	instancing = lg.getSupported().instancing and not force_no_instancing
 
@@ -835,7 +853,12 @@ function love.draw()
 			lg.push()
 			lg.translate(-ox / scale, oy / scale + VIEW_H)
 			lg.scale(1 / scale, -1 / scale)
-			player:draw()
+			player:drawShadow()
+			-- Sprite gets scene lighting + cloud shadow at its ground point.
+			playerShader:send("u_time", time_elapsed)
+			playerShader:send("u_world_pos", pgp or { 0.0, 0.0, 0.0 })
+			lg.setShader(playerShader)
+			player:drawSprite()
 			lg.pop()
 			lg.setDepthMode("lequal", false)
 			lg.setShader(capsuleShader)

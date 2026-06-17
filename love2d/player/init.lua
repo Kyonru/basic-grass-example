@@ -126,15 +126,23 @@ function Player:update(dt)
 	end
 end
 
-function Player:draw()
-	-- Contact shadow centred on the grass-displacement point (under the feet).
+-- Contact shadow centred on the grass-displacement point (under the feet).
+-- Drawn separately so the caller can keep it unshaded while the sprite is lit.
+function Player:drawShadow()
 	self.shadow:draw(self:footPosition())
+end
 
+function Player:drawSprite()
 	local anim = self.host.animations[self.host.currentAnimation]
 	if not anim then
 		return
 	end
 	anim:draw(self.sheet, self.x, self.y, 0, self.scale, self.scale)
+end
+
+function Player:draw()
+	self:drawShadow()
+	self:drawSprite()
 end
 
 return Player
