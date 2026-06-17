@@ -42,4 +42,5 @@ love love2d
 | C     | Toggle character grass displacement     |
 | N     | Wind noise debug view                   |
 | R     | Re-scatter the grass field              |
+| G     | Cycle quality (low / medium / high)     |
 | Esc   | Quit                                    |
