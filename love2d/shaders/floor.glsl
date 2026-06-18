@@ -46,7 +46,7 @@ uniform float wrap;
 uniform float steepness;
 uniform float threshold_gradient_size;
 uniform vec3 u_light_color;
-uniform float u_ndotl; // dot(up, light direction)
+uniform float u_ndotl; // shared stylized scene light term, kept in step with grass
 
 // Cloud shadow globals (clouds.gdshaderinc)
 uniform Image cloud_noise;

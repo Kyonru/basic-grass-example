@@ -28,10 +28,27 @@ local CAM_Y = { 0.304593, 0.927184, -0.218067 }
 local CAM_Z = { -0.753894, 0.374607, 0.539735 }
 local CAM_FORWARD = { -CAM_Z[1], -CAM_Z[2], -CAM_Z[3] }
 
--- DirectionalLight3D basis z (points from surfaces toward the light)
-local LIGHT_DIR = { -0.0695626, 0.725375, 0.684831 }
-local LIGHT_COLOR = { 1.0, 1.0, 1.0 }
+-- DirectionalLight3D basis z from the source scene. The time-of-day cycle uses
+-- it as the 09:00 anchor so the demo opens close to the original lighting.
+local SOURCE_LIGHT_DIR = { -0.0695626, 0.725375, 0.684831 }
 local LIGHT_ENERGY = 1.0 -- DirectionalLight3D.energy; scales the lit colour
+local DAY_CYCLE_SECONDS = 96.0
+local DAY_START_HOUR = 9.0
+local MIN_LIGHT_ELEVATION = math.rad(7.0)
+local LIGHT_TEMP_SUNRISE = 2800.0
+local LIGHT_TEMP_NOON = 6500.0
+local LIGHT_TEMP_NIGHT = 9000.0
+local SKY_DAY = { 0.35, 0.47, 0.55 }
+local SKY_GOLDEN = { 0.74, 0.39, 0.24 }
+local SKY_NIGHT = { 0.08, 0.10, 0.18 }
+local light_anchor_azimuth = 0.0
+local light_state = {
+	direction = { SOURCE_LIGHT_DIR[1], SOURCE_LIGHT_DIR[2], SOURCE_LIGHT_DIR[3] },
+	color = { 1.0, 1.0, 1.0 },
+	energy = LIGHT_ENERGY,
+	sky = { SKY_DAY[1], SKY_DAY[2], SKY_DAY[3] },
+	temperature = LIGHT_TEMP_NOON,
+}
 
 -- World ---------------------------------------------------------------------
 
@@ -134,10 +151,12 @@ local quality = "high" -- current grass density preset
 local textures = {}
 local characters = {}
 local time_elapsed = 0.0
+local day_hour = DAY_START_HOUR
 local character_send_timer = 0.0
 local quantised = true
 local debug_noise = false
 local displacement_enabled = true
+local day_cycle_enabled = true
 local saturation = 1.0 -- scene colour saturation (lower = washed-out / bad weather)
 local screenshot_timer = nil
 local player
@@ -150,6 +169,107 @@ end
 
 local function clamp(v, lo, hi)
 	return math.min(hi, math.max(lo, v))
+end
+
+local function lerp(a, b, t)
+	return a + (b - a) * t
+end
+
+local function smoothstep(edge0, edge1, x)
+	if edge0 == edge1 then
+		return x < edge0 and 0.0 or 1.0
+	end
+	local t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+end
+
+local function mix3(a, b, t)
+	return {
+		lerp(a[1], b[1], t),
+		lerp(a[2], b[2], t),
+		lerp(a[3], b[3], t),
+	}
+end
+
+local function atan2(y, x)
+	if x > 0.0 then
+		return math.atan(y / x)
+	elseif x < 0.0 and y >= 0.0 then
+		return math.atan(y / x) + math.pi
+	elseif x < 0.0 then
+		return math.atan(y / x) - math.pi
+	elseif y > 0.0 then
+		return math.pi * 0.5
+	elseif y < 0.0 then
+		return -math.pi * 0.5
+	end
+	return 0.0
+end
+
+local function kelvin_to_rgb(kelvin)
+	local temp = clamp(kelvin, 1000.0, 40000.0) / 100.0
+	local r, g, b
+
+	if temp <= 66.0 then
+		r = 1.0
+		g = clamp((99.4708025861 * math.log(temp) - 161.1195681661) / 255.0, 0.0, 1.0)
+	else
+		r = clamp((329.698727446 * ((temp - 60.0) ^ -0.1332047592)) / 255.0, 0.0, 1.0)
+		g = clamp((288.1221695283 * ((temp - 60.0) ^ -0.0755148492)) / 255.0, 0.0, 1.0)
+	end
+
+	if temp >= 66.0 then
+		b = 1.0
+	elseif temp <= 19.0 then
+		b = 0.0
+	else
+		b = clamp((138.5177312231 * math.log(temp - 10.0) - 305.0447927307) / 255.0, 0.0, 1.0)
+	end
+
+	return { r, g, b }
+end
+
+light_anchor_azimuth = atan2(SOURCE_LIGHT_DIR[1], SOURCE_LIGHT_DIR[3]) - math.pi * 0.25
+
+local function update_lighting_state()
+	-- 06:00 sunrise, 12:00 noon, 18:00 sunset. Negative height is night, but
+	-- the rendered direction stays barely above the horizon for stable clouds.
+	local solar_angle = ((day_hour - 6.0) / 12.0) * math.pi
+	local raw_height = math.sin(solar_angle)
+	local daylight = clamp(raw_height, 0.0, 1.0)
+	local min_y = math.sin(MIN_LIGHT_ELEVATION)
+	local visual_y = math.max(min_y, raw_height)
+	local elevation = math.asin(clamp(visual_y, min_y, 1.0))
+	local azimuth = light_anchor_azimuth + solar_angle
+	local horizontal = math.cos(elevation)
+
+	local horizon_warmth = 1.0 - smoothstep(0.08, 0.78, daylight)
+	local day_blend = smoothstep(-0.05, 0.18, raw_height)
+	local kelvin = lerp(LIGHT_TEMP_NOON, LIGHT_TEMP_SUNRISE, horizon_warmth)
+	local color = mix3(kelvin_to_rgb(LIGHT_TEMP_NIGHT), kelvin_to_rgb(kelvin), day_blend)
+	local power = smoothstep(-0.06, 0.82, raw_height)
+	local sky = mix3(SKY_NIGHT, SKY_DAY, smoothstep(-0.12, 0.55, raw_height))
+	local golden_sky = horizon_warmth * smoothstep(-0.08, 0.16, raw_height) * (1.0 - smoothstep(0.35, 0.85, raw_height))
+
+	light_state.direction = {
+		horizontal * math.sin(azimuth),
+		math.sin(elevation),
+		horizontal * math.cos(azimuth),
+	}
+	light_state.color = color
+	light_state.energy = LIGHT_ENERGY * lerp(0.18, 1.08, power)
+	light_state.sky = mix3(sky, SKY_GOLDEN, golden_sky * 0.55)
+	light_state.temperature = lerp(LIGHT_TEMP_NIGHT, kelvin, day_blend)
+end
+
+local function format_hour(hour)
+	local h = math.floor(hour)
+	local m = math.floor((hour - h) * 60.0 + 0.5)
+	if m >= 60 then
+		h = (h + 1) % 24
+		m = 0
+	end
+	return string.format("%02d:%02d", h, m)
 end
 
 -- World -> view, column-major (camera basis is orthonormal, so R = B^T)
@@ -603,16 +723,47 @@ end
 
 local function send_cloud_params(shader)
 	shader:send("cloud_noise", textures.cloud_noise)
-	shader:send("light_direction", LIGHT_DIR)
+	shader:send("light_direction", light_state.direction)
 	for name, value in pairs(CLOUD_PARAMS) do
 		shader:send(name, value)
 	end
 end
 
+local function send_lighting_uniforms()
+	local dir = light_state.direction
+	local light_color = {
+		light_state.color[1] * light_state.energy,
+		light_state.color[2] * light_state.energy,
+		light_state.color[3] * light_state.energy,
+	}
+	-- Keep the grass blades, grass ground patches, and floor on the same toon
+	-- band. The billboard grass uses a camera-facing normal, so the ground uses
+	-- that same stylized term to keep the time-of-day tint cohesive.
+	local scene_ndotl = clamp(dot3(CAM_Z, dir), 0.12, 1.0)
+
+	grassShader:send("u_light_color", light_color)
+	grassShader:send("u_ndotl", scene_ndotl)
+	grassShader:send("light_direction", dir)
+
+	grassGroundShader:send("u_light_color", light_color)
+	grassGroundShader:send("u_ndotl", scene_ndotl)
+	grassGroundShader:send("light_direction", dir)
+
+	floorShader:send("u_light_color", light_color)
+	floorShader:send("u_ndotl", scene_ndotl)
+	floorShader:send("light_direction", dir)
+
+	capsuleShader:send("light_direction", dir)
+	capsuleShader:send("u_albedo", light_color) -- white albedo scaled by light energy
+
+	playerShader:send("u_light_view", { dot3(dir, CAM_X), dot3(dir, CAM_Y), dot3(dir, CAM_Z) })
+	playerShader:send("u_light_color", light_color)
+	playerShader:send("light_direction", dir)
+end
+
 local function send_static_uniforms()
 	local view = make_view_matrix()
 	local proj = make_ortho_matrix(ORTHO_W, ORTHO_H, 0.05, 200.0)
-	local light_color = { LIGHT_COLOR[1] * LIGHT_ENERGY, LIGHT_COLOR[2] * LIGHT_ENERGY, LIGHT_COLOR[3] * LIGHT_ENERGY }
 
 	grassShader:send("u_view", "column", view)
 	grassShader:send("u_proj", "column", proj)
@@ -621,9 +772,6 @@ local function send_static_uniforms()
 	grassShader:send("albedo2_noise", textures.albedo2_noise)
 	grassShader:send("albedo3_noise", textures.albedo3_noise)
 	grassShader:send("accent_texture2", textures.accent)
-	grassShader:send("u_light_color", light_color)
-	-- The billboarded blade normal faces the camera, so NdotL is constant
-	grassShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	grassShader:send("quantised", quantised)
 	grassShader:send("world_space_sway", true)
 	grassShader:send("view_space_sway", true)
@@ -638,8 +786,6 @@ local function send_static_uniforms()
 	grassGroundShader:send("u_proj", "column", proj)
 	grassGroundShader:send("albedo2_noise", textures.albedo2_noise)
 	grassGroundShader:send("albedo3_noise", textures.albedo3_noise)
-	grassGroundShader:send("u_light_color", light_color)
-	grassGroundShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	for name, value in pairs(GRASS_PARAMS) do
 		send_if_present(grassGroundShader, name, value)
 	end
@@ -649,8 +795,6 @@ local function send_static_uniforms()
 	floorShader:send("u_proj", "column", proj)
 	floorShader:send("albedo2_noise", textures.albedo2_noise)
 	floorShader:send("albedo3_noise", textures.albedo3_noise)
-	floorShader:send("u_light_color", light_color)
-	floorShader:send("u_ndotl", dot3(CAM_Z, LIGHT_DIR))
 	for name, value in pairs(FLOOR_PARAMS) do
 		send_if_present(floorShader, name, value)
 	end
@@ -658,21 +802,18 @@ local function send_static_uniforms()
 
 	capsuleShader:send("u_view", "column", view)
 	capsuleShader:send("u_proj", "column", proj)
-	capsuleShader:send("light_direction", LIGHT_DIR)
-	capsuleShader:send("u_albedo", light_color) -- white albedo scaled by light energy
 	capsuleShader:send("u_alpha", 0.3) -- Godot transparency = 0.7
 
 	-- Player sprite: light its normal map with the world light expressed in the
 	-- camera's view space (the space the billboard normals were captured in).
 	playerShader:send("normal_map", textures.player_normal)
-	playerShader:send("u_light_view", { dot3(LIGHT_DIR, CAM_X), dot3(LIGHT_DIR, CAM_Y), dot3(LIGHT_DIR, CAM_Z) })
-	playerShader:send("u_light_color", light_color)
 	-- cuts/wrap/steepness/threshold_gradient_size: same toon bands as the floor,
 	-- so the cloud shadow on the player matches the shadows on the ground.
 	for name, value in pairs(FLOOR_PARAMS) do
 		send_if_present(playerShader, name, value)
 	end
 	send_cloud_params(playerShader)
+	send_lighting_uniforms()
 end
 
 function love.errorhandler(msg)
@@ -733,6 +874,7 @@ function love.load(args)
 	capsuleMesh = make_capsule_mesh(0.3, 1.5, 16, 6)
 
 	spawn_characters()
+	update_lighting_state()
 	send_static_uniforms()
 	send_character_positions()
 
@@ -751,6 +893,11 @@ end
 
 function love.update(dt)
 	time_elapsed = time_elapsed + dt
+	if day_cycle_enabled then
+		day_hour = (day_hour + dt * (24.0 / DAY_CYCLE_SECONDS)) % 24.0
+	end
+	update_lighting_state()
+	send_lighting_uniforms()
 
 	player:update(dt)
 
@@ -799,6 +946,16 @@ function love.keypressed(key)
 			end
 		end
 		apply_quality(GRASS_QUALITY_ORDER[(i % #GRASS_QUALITY_ORDER) + 1])
+	elseif key == "t" then
+		day_cycle_enabled = not day_cycle_enabled
+	elseif key == "," then
+		day_hour = (day_hour - 0.5) % 24.0
+		update_lighting_state()
+		send_lighting_uniforms()
+	elseif key == "." then
+		day_hour = (day_hour + 0.5) % 24.0
+		update_lighting_state()
+		send_lighting_uniforms()
 	elseif key == "[" then
 		saturation = clamp(saturation - 0.1, 0.0, 2.0)
 	elseif key == "]" then
@@ -816,7 +973,7 @@ function love.draw()
 	local oy = math.floor((h - VIEW_H * scale) * 0.5)
 
 	lg.setCanvas({ canvas, depth = true })
-	lg.clear(0.35, 0.47, 0.55, 1.0, true, true)
+	lg.clear(light_state.sky[1], light_state.sky[2], light_state.sky[3], 1.0, true, true)
 	lg.setDepthMode("lequal", true)
 	lg.setMeshCullMode("none")
 	lg.setColor(1, 1, 1, 1)
@@ -894,21 +1051,26 @@ function love.draw()
 			.. tostring(quantised)
 			.. ")  |  C: displacement ("
 			.. tostring(displacement_enabled)
-			.. ")  |  N: wind debug  |  R: rescatter  |  G: quality  |  [ ]: saturation  |  Esc: quit",
+			.. ")  |  T: time ("
+			.. tostring(day_cycle_enabled)
+			.. ")  |  , .: scrub  |  Esc: quit",
 		12,
 		12
 	)
+	lg.print("N: wind debug  |  R: rescatter  |  G: quality  |  [ ]: saturation", 12, 30)
 	lg.print(
 		string.format(
-			"%d fps, %d blades, %dx%d (%s), sat %.1f",
+			"%d fps, %d blades, %dx%d (%s), sat %.1f, %s, %.0fK",
 			love.timer.getFPS(),
 			GRASS_COUNT,
 			VIEW_W,
 			VIEW_H,
 			quality,
-			saturation
+			saturation,
+			format_hour(day_hour),
+			light_state.temperature
 		),
 		12,
-		30
+		48
 	)
 end

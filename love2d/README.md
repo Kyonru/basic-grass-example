@@ -43,4 +43,7 @@ love love2d
 | N     | Wind noise debug view                   |
 | R     | Re-scatter the grass field              |
 | G     | Cycle quality (low / medium / high)     |
+| T     | Pause / resume the time-of-day cycle    |
+| , / . | Scrub the lighting clock backward/forward |
+| [ / ] | Decrease / increase saturation          |
 | Esc   | Quit                                    |
